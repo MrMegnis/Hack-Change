@@ -98,11 +98,11 @@ class Model:
 
         self.scaler = StandardScaler()
 
-    def train(self, data_train: pd.DataFrame, data_test: pd.DataFrame = None, y_col_name="currentMethod",
+    def train(self, data_train: pd.DataFrame, data_test: pd.DataFrame = None, y_col_name="recommendedMethod",
               test_ratio: int = 0.2, save_path: str = None):
-        X, y = preprocess_data(data_train, self.label_encoders, self.scaler)
+        X, y = preprocess_data(data_train, self.label_encoders, self.scaler, y_col_name=y_col_name)
         if data_test is None:
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_ratio, random_state=42)
 
         self.model.fit(X_train, y_train)
 
@@ -133,7 +133,11 @@ if __name__ == "__main__":
     prep_data = preprocess_data(data_g, rec_sys.label_encoders, rec_sys.scaler, is_inference=True)
     # with pd.option_context('display.max_columns', None, 'display.width', None):
     #     print(prep_data.head())
-    metric = rec_sys.train(data_g)
+    metric = rec_sys.train(data_g, save_path="model.pkl")
     print(metric)
     print(data_g.iloc[0:2])
+    print(rec_sys.predict(data_g.iloc[0:1]))
+
+    loaded_model = Model()
+    loaded_model.load_model()
     print(rec_sys.predict(data_g.iloc[0:1]))
