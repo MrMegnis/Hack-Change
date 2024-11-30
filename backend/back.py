@@ -1,7 +1,9 @@
 import uvicorn
+import os
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Dict, Literal
+from fastapi.middleware.cors import CORSMiddleware
 from model.model import transform_data, Model
 
 
@@ -26,14 +28,25 @@ class InputData(BaseModel):
 api = FastAPI()
 
 
+api.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 @api.post('/predict')
-async def predict_handler(
-        datas: InputData
-):
-    dataframe = transform_data(datas.dict())
+async def predict_handler(datas: InputData):
+    print(datas)
+    print(os.path.abspath(__file__))
+    dataframe = transform_data([datas.dict()])
     model = Model()
-    model.load_model()
-    return {"number": f"{model.predict(dataframe)}"}
+    model.load_model("../model/model.pkl")
+    a = model.predict(dataframe)
+    print(a)
+    return {"numbers": f"{a}"}
 
 
 if __name__ == '__main__':

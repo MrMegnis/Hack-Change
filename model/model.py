@@ -2,7 +2,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, MultiLabelBinarizer
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder
@@ -11,7 +11,8 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 import joblib
 import json
 
-def transform_data(data:dict):
+
+def transform_data(data: dict):
     df = pd.DataFrame(data)
     df['signatures_common_mobile'] = df['signatures'].apply(lambda x: x.get('common', {}).get('mobile', 0))
     df['signatures_common_web'] = df['signatures'].apply(lambda x: x.get('common', {}).get('web', 0))
@@ -20,13 +21,14 @@ def transform_data(data:dict):
     df = df.drop(columns=['signatures'])
     return df
 
+
 def load_data(path: str = "data.json"):
     with open(path, 'r', encoding='utf-8') as f:
         data = json.load(f)
     return transform_data(data)
 
 
-def preprocess_data(data, is_inference=False, y_col_name: str = "recommendedMethod"):
+def preprocess_data(data, label_encoders, scaler, is_inference=False, y_col_name: str = "recommendedMethod"):
     """
     Универсальная функция предобработки данных для инференса и тренировки.
 
@@ -35,14 +37,14 @@ def preprocess_data(data, is_inference=False, y_col_name: str = "recommendedMeth
     :return: preprocessed features X и (если не инференс) target y
     """
 
-    # Категориальные признаки
     categorical_columns = ["segment", "role", "currentMethod"]
-    label_encoders = {col: LabelEncoder() for col in categorical_columns}
+    # label_encoders = {col: LabelEncoder() for col in categorical_columns}
 
     # Преобразуем категориальные признаки в числа
-    for col in categorical_columns:
-        label_encoders[col].fit(data[col])  # Мы "обучаем" энкодер на тренировочных данных
-        data[col] = label_encoders[col].transform(data[col])
+    if not is_inference:
+        for col in categorical_columns:
+            label_encoders[col].fit(data[col])  # Мы "обучаем" энкодер на тренировочных данных
+            data[col] = label_encoders[col].transform(data[col])
 
     # Булевы признаки
     data["mobileApp"] = data["mobileApp"].apply(lambda x: 1 if x else 0)
@@ -50,16 +52,15 @@ def preprocess_data(data, is_inference=False, y_col_name: str = "recommendedMeth
     # Преобразуем все числовые признаки, которые могут иметь разные масштабы
     numeric_columns = ["organizations", "signatures_common_mobile", "signatures_common_web",
                        "signatures_special_mobile", "signatures_special_web", "claims"]
-    scaler = StandardScaler()
+    # scaler = StandardScaler()
     data[numeric_columns] = scaler.fit_transform(data[numeric_columns])
 
     # Преобразуем доступные методы подписи в бинарные признаки
     all_methods = ["SMS", "PayControl", "КЭП на токене", "КЭП в приложении"]
     for method in all_methods:
         data[f"method_{method}"] = data["availableMethods"].apply(lambda x: 1 if method in x else 0)
-
     # Если это данные для инференса, просто возвращаем признаки X
-    X = data.drop(columns=["clientId", "organizationId", "availableMethods"])
+    X = data.drop(columns=["clientId", "organizationId"])
 
     if is_inference:
         # Для инференса целевой переменной нет
@@ -78,12 +79,10 @@ def preprocess_data(data, is_inference=False, y_col_name: str = "recommendedMeth
 class Model:
     def __init__(self, model=None, preprocessor=None):
         if preprocessor is None:
-            self.preprocessor = transformers = [
-                ('segment_role', OneHotEncoder(), ['segment', 'role']),
-                ('methods', OneHotEncoder(), ['availableMethods']),
+            self.preprocessor = ColumnTransformer([
                 ('numerical', 'passthrough', ['organizations', 'claims',
-                                              'signatures.common.mobile', 'signatures.common.web',
-                                              'signatures.special.mobile', 'signatures.special.web', 'mobileApp'])]
+                                              'signatures_common_mobile', 'signatures_common_web',
+                                              'signatures_special_mobile', 'signatures_special_web', 'mobileApp'])])
         else:
             self.preprocessor = preprocessor
 
@@ -94,16 +93,20 @@ class Model:
         else:
             self.model = model
 
-    def train(self, data_train: pd.DataFrame, data_test: pd.DataFrame = None, y_col_name="currentMethod",
+        categorical_columns = ["segment", "role", "currentMethod"]
+        self.label_encoders = {col: LabelEncoder() for col in categorical_columns}
+
+        self.scaler = StandardScaler()
+
+    def train(self, data_train: pd.DataFrame, data_test: pd.DataFrame = None, y_col_name="recommendedMethod",
               test_ratio: int = 0.2, save_path: str = None):
+        X, y = preprocess_data(data_train, self.label_encoders, self.scaler, y_col_name=y_col_name)
         if data_test is None:
-            X = data_train.drop(columns=[y_col_name])
-            y = data_train[y_col_name]
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_ratio, random_state=42)
 
         self.model.fit(X_train, y_train)
 
-        y_pred = self.predict(X_test)
+        y_pred = self.model.predict(X_test)
         f1_macro = f1_score(y_test, y_pred, average='macro')
 
         if save_path is not None:
@@ -112,7 +115,8 @@ class Model:
         return f1_macro
 
     def predict(self, features: pd.DataFrame):
-        return self.model.predict(preprocess_data(features, True))
+        data = preprocess_data(features, self.label_encoders, self.scaler, True)
+        return self.model.predict(data)
 
     def save_model(self, file_path: str = "model.pkl"):
         joblib.dump(self.model, file_path)
@@ -122,12 +126,18 @@ class Model:
 
 
 if __name__ == "__main__":
-    data = load_data()
+    data_g = load_data()
     rec_sys = Model()
-    with pd.option_context('display.max_columns', None, 'display.width', None):
-        print(data.head())
-    prep_data = preprocess_data(data, is_inference=True)
-    with pd.option_context('display.max_columns', None, 'display.width', None):
-        print(prep_data.head())
-    print(data.iloc[0, :])
-    rec_sys.predict(data)
+    # with pd.option_context('display.max_columns', None, 'display.width', None):
+    #     print(data_g.head())
+    prep_data = preprocess_data(data_g, rec_sys.label_encoders, rec_sys.scaler, is_inference=True)
+    # with pd.option_context('display.max_columns', None, 'display.width', None):
+    #     print(prep_data.head())
+    metric = rec_sys.train(data_g, save_path="model.pkl")
+    print(metric)
+    print(data_g.iloc[0:2])
+    print(rec_sys.predict(data_g.iloc[0:1]))
+
+    loaded_model = Model()
+    loaded_model.load_model()
+    print(rec_sys.predict(data_g.iloc[0:1]))
