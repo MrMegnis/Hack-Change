@@ -11,10 +11,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 import joblib
 import json
 
-
-def load_data(path: str = "data.json"):
-    with open(path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+def transform_data(data:dict):
     df = pd.DataFrame(data)
     df['signatures_common_mobile'] = df['signatures'].apply(lambda x: x.get('common', {}).get('mobile', 0))
     df['signatures_common_web'] = df['signatures'].apply(lambda x: x.get('common', {}).get('web', 0))
@@ -22,6 +19,11 @@ def load_data(path: str = "data.json"):
     df['signatures_special_web'] = df['signatures'].apply(lambda x: x.get('special', {}).get('web', 0))
     df = df.drop(columns=['signatures'])
     return df
+
+def load_data(path: str = "data.json"):
+    with open(path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    return transform_data(data)
 
 
 def preprocess_data(data, is_inference=False, y_col_name: str = "recommendedMethod"):
@@ -127,5 +129,5 @@ if __name__ == "__main__":
     prep_data = preprocess_data(data, is_inference=True)
     with pd.option_context('display.max_columns', None, 'display.width', None):
         print(prep_data.head())
-
-    rec_sys.train()
+    print(data.iloc[0, :])
+    rec_sys.predict(data)
