@@ -26,6 +26,9 @@
 Команда:
 
 Шафикоф Максим - Fullstack Developer, капитан
+
 Маракулин Андрей - Data scientist
+
 Беляева Валерия - Backend Developer
+
 Хайдукова Татьяна - Data scientist
