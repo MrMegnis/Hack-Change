@@ -131,7 +131,6 @@ const App = () => {
       {receivedData && (
         <div className="json-display">
           <h2>Полученные данные:</h2>
-          <pre>{receivedData}</pre>
         </div>
       )}
     </div>
