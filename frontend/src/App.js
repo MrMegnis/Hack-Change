@@ -34,7 +34,7 @@ const App = () => {
             setReceivedData(JSON.stringify(result, null, 2));
 
             // Устанавливаем результат в состояние
-            setResponse(result.numbers || 'Нет данных в поле numbers');
+            setResponse(result.response || 'Нет данных в поле numbers');
         } catch (error) {
             console.error("Ошибка:", error);
 
